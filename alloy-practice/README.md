@@ -1,47 +1,145 @@
 # Alloyによる形式検証の実習
 
-## 注意事項（これはレポートから除去せよ）
-
-* 課題関連のファイル全てを，このファイルが存在するディレクトリ `alloy-practice` 以下に置くこと．
-* 検証対象のOSSは，GitHub上で公開されたリポジトリに限定する．
-* 提出するGitHubリポジトリは，オリジナルリポジトリをforkして，その中に課題関連ファイルを追加したもの．
-
 ## 検証対象のOSS
+### 概要
+今回、pythonで定期的なタスク実行をスケジュールできるライブラリである「schedule」を対象に、プログラムのモデル化による形式検証を行うこととした。
+このライブラリはpipで簡単にインストールすることができ、関数ごとに、どのような間隔で実行させるのかを指定することができる。例えば、10秒おきに実行させたければ
+```aiignore
+schedule.every(10).seconds.do(jobname)
+```
+などとscheduleに登録を行い、その後
+```aiignore
+while True:
+    schedule.run_pending()
+```
+のように、schedule内のrunnerを呼び出すことで、指定した関数を一定間隔で動かすことができる。間隔の指定は種々様々にでき、秒分時ごとの指定はもちろん、曜日ごとの指定をすることができる。
 
-*以下，記述事項の説明．*
-
-* 検証対象のOSS概要を説明する．
-* ドキュメント等への文献があるならリンクを示す．
-* レポートの本題を理解するのに必要な範囲の説明でよい．
+### リンク
+* 以下が本OSSへのリンクである。<br>
+https://github.com/dbader/schedule<br>
+* ドキュメントは、以下のリンクからアクセスできる。<br>
+https://schedule.readthedocs.io/en/stable/index.html
 
 ## 検証すべき性質
+### 性質について
+次の性質について、検証することとした。
+* 「ファイルアクセスが衝突するような異なるjob同士が、同時刻に発生することはない」
+  * これは、2つのジョブが同一ファイルを扱う場合は常に排他接続となり、衝突する時間が存在しないはずであるという、安全性として考えることのできる性質である。
 
-*以下，記述事項の説明．*
-
-* どのような性質を検証するか説明する．
-* その性質が仕様として妥当であることを示す判断材料を示す．
-  + 論拠となる文献があるならそれを示す．
-  + 文献が無い場合，当該OSSにとってその性質が重要である具体例を示す．
+### 妥当性
+次に、この性質を選んだ理由について説明する。<br>
+まず、一般的に、同じファイルに同時に書き込みを行うと、データが壊れたり不具合が発生することがある。授業中の例にもある通り、あるプロセスがファイルをopenしている場合は、そのファイルに対してロックをかけるのが通例である。
+そのため、ファイル書き込み時の排他性はどんなソフトウェアでも重要なものとなる。<br>
+一方で、本OSSであるscheduleでは並列実行を採用しているとあるが (https://schedule.readthedocs.io/en/stable/parallel-execution.html)、ジョブ間でファイルアクセスを共有した事象が発生した場合にどう動くかが明確ではない。
+そのため、モデル化により、この安全性が満たされるかどうかを検証することとした。
 
 ## モデル化
+次に、本OSSをどのようにモデル化したかについて説明する。<br>
+まず、jobごとに状態遷移を定義することは非常に難解であったため、今回は時間を離散的に扱い、シグネチャとして定義し、ジョブの実行時間やファイルへのアクセスを、相関図的に表現することとした。<br>
+### signatureについて
+以下は、各シグネチャと元OSSの対応関係である。
 
-*以下，記述事項の説明．*
+* Time
+  * 前述の通り離散的な時刻を表すシグネチャで、alloyでデフォルトで使うことのできる`util/ordering[Time]`を利用し、離散的な時間列を生成した。
+* Now
+  * 現在時刻を表すためのシグネチャで、元OSSでもnow変数として現在時刻が格納されている。
+* File
+  * jobがアクセスするであろうファイルを表すシグネチャ。
+* Job
+  * 各job、すなわち実際に実行したい関数を表すシグネチャであり、元OSSでのJobクラスに相当する。実装上は非常に多くの変数を持っているが、ここでは以下の変数を用いて最小限抽象化を行った。
+    * last_run: 直近の実行開始時刻。元OSSでのJobクラスのself.last_runに相当する。
+    * next_run: 次回の実行予定時刻。元OSSでのJobクラスのself.next_runに相当する。
+    * writes: fileへの書き込み関係（これは変数としては格納されていないが、ファイルへのアクセスを表現するために今回用いた）
 
-* どのように対象OSSをモデル化したか，説明する．
-* Alloyの記述と，元OSSの何が対応しているか，できる限り明示する．
+### factについて
+次に、モデルが満たす静的な制約であるfactについて説明する。なお、元OSSでは実行間隔を保存するIntervalという変数があるが、今回それをうまくモデル化することができなかったため、簡易的にIntervalが可変であると仮定し特にモデルに組み込むことなく検証を行った。なお、元OSSでは実際にIntervalを可変にすることができる。(https://schedule.readthedocs.io/en/stable/examples.html)
+* fact OnlyOneNow
+  * 元OSSで変数nowにただ1つ存在することを表現
+* fact NowOnlyOne
+  * 元OSSで変数nowにただ1つの時刻が格納されていることを表現
+* fact AtLeastOneExe
+  * 元OSSですべてのjobは、ただ１つの実行中（開始）時間を持つことを表現
+* fact OneNextTime
+  * 元OSSですべてのjobは、ただ１つの次に実行可能な時間を持つことを表現
+* fact NowDoesNotExceedNex
+  * 元OSSでnowはnext_runを超えないことを表現。元OSSではもしnext_runがnowよりも手前の時刻になった場合、next_runがnowを超えるまで無限にIntervalを加算することで、この仕様を実現している。(`__init__.py`の733行目のwhileループ`while next_run <= now:
+            next_run += period`)
+* fact NowDoesNotExceedLast
+  * 元OSSでnowはlast_runを超えないことを表現。これは、元OSSで実行時の時間を記録することから自明である。(`__init__.py`の692行目の`self.last_run = datetime.datetime.now()`)
+* fact NoNextRunAfterExe
+  * 元OSSで、next_runの後の時間がlast_runに入ることがないことを表現。これも、上2つの制約から自明である。
+* fact NoDuplicateExe
+  * 元OSSで、同じjobの、last_runとnext_runがかぶることは無いことを表現。これは、元OSSでnext_runはnowにIntervalを追加していることに由来する。(`__init__.py`の`def _schedule_next_run(self)`内、全体で719行目からの処理)
+* fact IntervalDiff
+  * 元OSSで、last_runとnext_runの間隔がInterval以上であることを表現。前述の通りIntervalを用いたモデル化が難解であったため、今回はその間隔が1以上であれば良いとしている。
 
+元OSSでは以上で表現した変数next_runが現在時刻ど一致するか確認を行い、一致すれば実行するというループを繰り返すことによりスケジューリング処理を実現している。
 
 ## 検証手法
+以上のようにモデルを設計した上で、前述の「ファイルアクセスが衝突するような異なるjob同士が、同時刻に発生することはない」性質を検証することとした。
+これを論理式にすると、次のようになる。
+```aiignore
+(ファイルアクセスが衝突する)∧(同時刻にjobが実行される)
+```
+つまり、前述で定義したalloy上の変数を用いると、あるjob 2つ（job1とjob2とする）を取った時、
+```aiignore
+(job1のwritesとjob2のwritesが示す先が同じ)∧(job1のnext_runとjob2のnext_runが示す先が同じ)
+```
+となる事象が存在すれば、それは検証する性質を満たさないこととなる。<br>
+以上のことを踏まえ、検証事項は次のように定義した。
+```aiignore
+assert NoFileCollision {
+	all disj j1, j2: Job |
+	some j1.writes and some j2.writes and j1.writes = j2.writes
+	=> no t: Time | t in j1.next_run and t in j2.next_run
+}
+```
 
-*以下，記述事項の説明．*
-
-* 設計したモデルの上で，どのような考えを持って検証したのか説明する．
-* Alloyで記述した性質が，前掲の検証すべき性質に対応していることを具体的に説明する．
 
 ## 補足事項
+### 検証結果
+結果、fileの衝突に関する制約がないことから明らかではあるが、この検証したい性質が満たされていないことが分かった。
 
-*以下，記述事項の説明．*
+### 実際にライブラリを用いての実装検証
+#### 手法
+今回、本当に検証したい性質が満たされないか確認するために、実際にalloy-practiceディレクトリ内の`test.py`のように実装を行った。
+同じファイルへアクセスするjob1とjob2があり、job1とjob2ではファイル書き込み時間が異なるものとした。そして、これらのjobを同時刻に同じintervalを設定して起動した。<br>
+実装ではメインスレッドが`run_pending()`でジョブを呼び出すたびに、新しいスレッドがファイル書き込みを行うため、複数スレッドが同時に`testfile.txt`を書き込みするような状況を作った。<br>
+もし衝突が起こらないようにブロックする仕組みがあれば、テキストファイルの中身は
+```aiignore
+[Job1] start writing
+[Job1] finish writing
+[Job2] start writing
+[Job2] finish writing
+[Job1] start writing
+[Job1] finish writing
+[Job2] start writing
+[Job2] finish writing
+...
+```
+のように、job1の履歴とjob2の履歴が交互に残るはずである。<br>
+#### 結果
+結果、単一ファイルに複数のjobがアクセスしたため、アクセスしたtxtファイルの書き込み内容の行が混ざる衝突が確認できた。<br>
+```aiignore
+[Job2] start writing
+[Job2] finish writing
+[Job2] start writing
+[Job2] finish writing
+[Job2] start writing
+[Job2] finish writing
+[Job1] start writing
+[Job1] finish writing
+[Job2] start writing
+[Job2] finish writing
+...
+```
 
-* その他，取り組みを評価する上で有益な情報を与える．
-* 例えば，リポジトリ内に入れた課題関連ファイルの説明は，複数ファイルがあるときには有益である．
-* コメントフィードバックは，ここではなくGoogleフォームに書く．
+### その他補足事項
+alloy-practice内には以下のファイルを配置した。
+* alloy-practice-check.als
+  * 実際に検証で使用した、alloyのプロジェクトファイル
+* test.py
+  * 本当に性質が満たされないか、実装上で確認した際のpythonファイル。pipで`schedule`と`pytz`をinstallする必要がある。
+
+なお、元OSSのソースコードは`/schedule/__init__.py`となる。また、今回の検証の本題とは逸れるが、`/test_schedule.py`でunittestを用いた、assert文による検証を行っていることが確認できた。<br>
+また、元OSSのソースコードを動かすためには`requirements-dev.txt`をpipでinstallする必要がある。
