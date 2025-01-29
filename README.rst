@@ -1,3 +1,6 @@
+This repository is for a Software Engineering class assignment at the University of Electro-Communications
+-----
+
 `schedule <https://schedule.readthedocs.io/>`__
 ===============================================
 
