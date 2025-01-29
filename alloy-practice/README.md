@@ -1,4 +1,5 @@
 # Alloyによる形式検証の実習
+学籍番号: 2210593
 
 ## 検証対象のOSS
 ### 概要
@@ -30,7 +31,7 @@ https://schedule.readthedocs.io/en/stable/index.html
 次に、この性質を選んだ理由について説明する。<br>
 まず、一般的に、同じファイルに同時に書き込みを行うと、データが壊れたり不具合が発生することがある。授業中の例にもある通り、あるプロセスがファイルをopenしている場合は、そのファイルに対してロックをかけるのが通例である。
 そのため、ファイル書き込み時の排他性はどんなソフトウェアでも重要なものとなる。<br>
-一方で、本OSSであるscheduleでは並列実行を採用しているとあるが (https://schedule.readthedocs.io/en/stable/parallel-execution.html)、ジョブ間でファイルアクセスを共有した事象が発生した場合にどう動くかが明確ではない。
+一方で、本OSSであるscheduleでは並列実行を採用しているとあるが([https://schedule.readthedocs.io/en/stable/parallel-execution.html](https://schedule.readthedocs.io/en/stable/parallel-execution.html))、ジョブ間でファイルアクセスを共有した事象が発生した場合にどう動くかが明確ではない。
 そのため、モデル化により、この安全性が満たされるかどうかを検証することとした。
 
 ## モデル化
